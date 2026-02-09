@@ -21,7 +21,7 @@
         href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;800&family=Fredoka:wght@600&family=Kanit:wght@400;600&display=swap"
         rel="stylesheet">
 
-    <style>
+    <style type="text/tailwindcss">
         body {
             font-family: 'Sarabun', sans-serif;
             background-color: #0f172a;
@@ -374,9 +374,10 @@
         };
 
         // ==========================================
-        // GAME 1: MEMORY
+        // GAME 1: MEMORY (Updated)
         // ==========================================
-        function MemoryGame({ level, onComplete, onExit }) {
+        function MemoryGame({ level, onComplete, onExit, updateStats }) {
+            // New Item Pool
             const MEMORY_ITEMS = [
                 { id: 'lion', name: 'สิงโต', icon: '🦁' }, { id: 'elephant', name: 'ช้าง', icon: '🐘' },
                 { id: 'monkey', name: 'ลิง', icon: '🐵' }, { id: 'penguin', name: 'เพนกวิน', icon: '🐧' },
@@ -386,14 +387,34 @@
                 { id: 'pig', name: 'หมู', icon: '🐷' }, { id: 'frog', name: 'กบ', icon: '🐸' },
             ];
 
-            const TOTAL_ROUNDS = 15;
+            const DISTRACTION_QUIZ_POOL = [
+                { q: "สัตว์ตัวไหน 'คอยาว' ที่สุด?", a: '🦒', options: ['🦁', '🦒', '🐧'] },
+                { q: "สัตว์ตัวไหนชอบกิน 'กล้วย'?", a: '🐵', options: ['🐵', '🐯', '🦓'] },
+                { q: "สัตว์ตัวไหนมี 'งวง'?", a: '🐘', options: ['🐼', '🐘', '🦁'] },
+                { q: "สัตว์ตัวไหนมีลาย 'ขาว-ดำ'?", a: '🦓', options: ['🦓', '🐘', '🐯'] },
+                { q: "สัตว์ตัวไหนเป็น 'เจ้าป่า'?", a: '🦁', options: ['🐧', '🦁', '🦓'] },
+                { q: "สัตว์ตัวไหนกิน 'ไผ่' เป็นอาหาร?", a: '🐼', options: ['🐵', '🐼', '🦁'] },
+                { q: "สัตว์ตัวไหนอยู่บน 'น้ำแข็ง'?", a: '🐧', options: ['🐧', '🦒', '🐘'] },
+                { q: "สัตว์ตัวไหนร้อง 'อู๊ดๆ'?", a: '🐷', options: ['🐷', '🐮', '🐸'] },
+                { q: "สัตว์ตัวไหนชอบกิน 'นม'?", a: '🐮', options: ['🐮', '🐸', '🐨'] },
+                { q: "สัตว์ตัวไหน 'กระโดด' เก่ง?", a: '🐸', options: ['🐸', '🐷', '🐮'] },
+                // Math fallback
+                { q: "1 + 1 เท่ากับ?", a: '2', options: ['1', '2', '3'] },
+                { q: "5 - 2 เท่ากับ?", a: '3', options: ['2', '3', '4'] },
+                { q: "2 x 2 เท่ากับ?", a: '4', options: ['2', '4', '6'] },
+            ];
+
+            const TOTAL_ROUNDS = 10; // Adjusted for better flow
             const [step, setStep] = useState('memorize');
             const [target, setTarget] = useState(null);
             const [distractCount, setDistractCount] = useState(0);
             const [options, setOptions] = useState([]);
             const [currentRound, setCurrentRound] = useState(1);
+            const [timer, setTimer] = useState(10);
+            const [currentQuiz, setCurrentQuiz] = useState(null);
+            const [startTime, setStartTime] = useState(Date.now());
 
-            // Level Scaling (Cap difficulty at 15)
+            // Level Scaling
             const effectiveLevel = Math.min(level, 15);
             const distractQCount = effectiveLevel <= 5 ? 1 : (effectiveLevel <= 10 ? 2 : 3);
             const recallOptionCount = effectiveLevel <= 5 ? 3 : (effectiveLevel <= 10 ? 4 : 6);
@@ -402,24 +423,50 @@
                 startRound();
             }, []);
 
+            // Timer for Memorize Phase
+            useEffect(() => {
+                if (step === 'memorize') {
+                    if (timer > 0) {
+                        const interval = setInterval(() => setTimer(t => t - 1), 1000);
+                        return () => clearInterval(interval);
+                    } else {
+                        handleMemorized();
+                    }
+                }
+            }, [step, timer]);
+
             const startRound = () => {
                 const item = MEMORY_ITEMS[Math.floor(Math.random() * MEMORY_ITEMS.length)];
                 setTarget(item);
                 setStep('memorize');
+                setTimer(10); // Reset timer to 10s
                 setDistractCount(0);
+                prepareDistraction();
+            };
+
+            const prepareDistraction = () => {
+                const quiz = DISTRACTION_QUIZ_POOL[Math.floor(Math.random() * DISTRACTION_QUIZ_POOL.length)];
+                const shuffledOptions = [...quiz.options].sort(() => 0.5 - Math.random());
+                setCurrentQuiz({ ...quiz, options: shuffledOptions });
             };
 
             const handleMemorized = () => {
                 setStep('distract');
             };
 
-            const handleDistractAnswer = () => {
-                if (distractCount + 1 < distractQCount) {
-                    setDistractCount(prev => prev + 1);
+            const handleDistractAnswer = (selectedAns) => {
+                if (selectedAns === currentQuiz.a) {
+                    // Correct
+                    if (distractCount + 1 < distractQCount) {
+                        setDistractCount(prev => prev + 1);
+                        prepareDistraction();
+                    } else {
+                        const others = MEMORY_ITEMS.filter(i => i.id !== target.id).sort(() => 0.5 - Math.random()).slice(0, recallOptionCount - 1);
+                        setOptions([target, ...others].sort(() => 0.5 - Math.random()));
+                        setStep('recall');
+                    }
                 } else {
-                    const others = MEMORY_ITEMS.filter(i => i.id !== target.id).sort(() => 0.5 - Math.random()).slice(0, recallOptionCount - 1);
-                    setOptions([target, ...others].sort(() => 0.5 - Math.random()));
-                    setStep('recall');
+                    alert('ผิดครับ ลองใหม่อีกครั้ง');
                 }
             };
 
@@ -429,6 +476,10 @@
                         setCurrentRound(p => p + 1);
                         startRound();
                     } else {
+                        // Calc Score: Base 100 + Level Bonus
+                        const roundScore = 100 * effectiveLevel;
+                        const timeSpent = (Date.now() - startTime) / 1000;
+                        updateStats(roundScore, timeSpent);
                         onComplete();
                     }
                 } else {
@@ -444,22 +495,26 @@
 
                     {step === 'memorize' && (
                         <div className="text-center animate-pop-in">
-                            <h2 className="text-2xl font-bold mb-6 text-orange-800">จำสัตว์ตัวนี้</h2>
-                            <div className="text-9xl mb-6">{target?.icon}</div>
+                            <h2 className="text-2xl font-bold mb-2 text-orange-800">จำสัตว์ตัวนี้</h2>
+                            <div className="text-6xl font-black text-orange-400 mb-4">{timer}</div>
+                            <div className="text-9xl mb-6 animate-pulse-custom">{target?.icon}</div>
                             <div className="text-3xl font-bold mb-8 text-slate-700">{target?.name}</div>
-                            <button onClick={handleMemorized} className="btn-primary w-full max-w-xs mx-auto">จำได้แล้ว!</button>
+                            <p className="text-slate-400 text-sm">ไม่ต้องกด ระบบจะไปต่อเอง</p>
                         </div>
                     )}
 
-                    {step === 'distract' && (
-                        <div className="text-center w-full max-w-xs animate-fade-in">
+                    {step === 'distract' && currentQuiz && (
+                        <div className="text-center w-full max-w-md animate-fade-in">
                             <h2 className="text-xl font-bold mb-4 text-orange-800">กิจกรรมคั่นเวลา ({distractCount + 1}/{distractQCount})</h2>
-                            <div className="bg-white p-6 rounded-2xl shadow-sm mb-4">
-                                <p className="text-lg">1 + 1 เท่ากับ?</p>
+                            <div className="bg-white p-6 rounded-2xl shadow-sm mb-4 border-2 border-orange-100">
+                                <p className="text-2xl font-bold text-slate-700">{currentQuiz.q}</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button onClick={handleDistractAnswer} className="py-4 bg-white rounded-xl shadow-sm font-bold text-xl hover:bg-orange-100">2</button>
-                                <button onClick={() => alert('ผิดครับ')} className="py-4 bg-white rounded-xl shadow-sm font-bold text-xl hover:bg-orange-100">3</button>
+                            <div className="grid grid-cols-1 gap-3">
+                                {currentQuiz.options.map((opt, i) => (
+                                    <button key={i} onClick={() => handleDistractAnswer(opt)} className="py-4 bg-white rounded-xl shadow-sm font-bold text-2xl hover:bg-orange-100 border border-orange-50 transition active:scale-95">
+                                        {opt}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -469,7 +524,7 @@
                             <h2 className="text-xl font-bold mb-6 text-orange-800">สัตว์ตัวแรกคือตัวไหน?</h2>
                             <div className="grid grid-cols-2 gap-4">
                                 {options.map(item => (
-                                    <button key={item.id} onClick={() => handleRecall(item)} className="bg-white p-4 rounded-2xl shadow-sm flex flex-col items-center hover:bg-orange-50 active:scale-95 transition">
+                                    <button key={item.id} onClick={() => handleRecall(item)} className="bg-white p-4 rounded-2xl shadow-sm flex flex-col items-center hover:bg-orange-50 active:scale-95 transition border border-orange-50">
                                         <span className="text-5xl mb-2">{item.icon}</span>
                                         <span className="font-bold text-slate-700">{item.name}</span>
                                     </button>
@@ -484,11 +539,12 @@
         // ==========================================
         // GAME 2: VISUOSPATIAL
         // ==========================================
-        function VisuospatialGame({ level, onComplete, onExit }) {
+        function VisuospatialGame({ level, onComplete, onExit, updateStats }) {
             const [grid, setGrid] = useState([]);
             const [size, setSize] = useState(4);
             const [symmetryType, setSymmetryType] = useState('vertical');
             const [stage, setStage] = useState(1);
+            const [startTime] = useState(Date.now()); // Track session start
             const TOTAL_STAGES = 15;
 
             // Level Scaling (Cap at 15)
@@ -626,7 +682,11 @@
                         if (stage < TOTAL_STAGES) {
                             setStage(s => s + 1);
                         } else {
-                            onComplete();
+                            // Calc Score & Time
+                            const roundScore = 150 * effectiveLevel;
+                            const timeSpent = (Date.now() - startTime) / 1000;
+                            updateStats(roundScore, timeSpent);
+                            onComplete(null, { score: roundScore, time: timeSpent });
                         }
                     }, 300);
                 }
@@ -700,7 +760,7 @@
         // ==========================================
         // GAME 3: ATTENTION (New Zoo Feeder Logic)
         // ==========================================
-        function AttentionGame({ level, onComplete, onExit }) {
+        function AttentionGame({ level, onComplete, onExit, updateStats }) {
             const ANIMALS = [
                 { emoji: '🦁', type: 'carn', name: 'เนื้อ', icon: '🥩' },
                 { emoji: '🐯', type: 'carn', name: 'เนื้อ', icon: '🍗' },
@@ -735,6 +795,7 @@
             const [speed, setSpeed] = useState(1.0);
             const [feedback, setFeedback] = useState(null);
             const [alertMsg, setAlertMsg] = useState(null);
+            const [startTime] = useState(Date.now()); // Track start time
 
             // Dynamic Level based on Score
             const currentLevel = Math.floor(score / 300) + 1;
@@ -768,7 +829,7 @@
             };
 
             const startGame = () => {
-                const initialBeltCount = 1;
+                const initialBeltCount = 1; // Always start easy
                 const initialAnimals = generateAnimals(initialBeltCount);
 
                 setScore(0);
@@ -795,9 +856,9 @@
                 const now = Date.now();
 
                 // Spawn Logic
-                // Dynamic Spawn Rate: Faster as speed increases or score increases
-                // Base 1000ms, reduced by speed factor
-                const effectiveSpawnRate = Math.max(500, 1500 - (speedRef.current * 400));
+                // Balance: Divide base rate by belt count to maintain per-belt density
+                const baseRate = 1500 - (speedRef.current * 400);
+                const effectiveSpawnRate = Math.max(300, baseRate / beltCountRef.current);
 
                 if (now - lastSpawnTime.current > effectiveSpawnRate) {
                     spawnFood();
@@ -816,6 +877,7 @@
                 const targetAnimal = currentAnimalsRef.current[laneIndex];
 
                 if (!targetAnimal) return;
+
 
                 const rand = Math.random();
                 let type;
@@ -921,9 +983,12 @@
                     if (newLives <= 0) {
                         setGameActive(false);
                         const finalLevel = Math.floor(score / 300) + 1;
-                        alert(`จบเกม! คุณทำได้ถึง Level ${finalLevel} (คะแนน: ${score})`);
+                        const timeSpent = (Date.now() - startTime) / 1000;
+                        updateStats(score, timeSpent); // Save stats
+
+                        // alert(`จบเกม! คุณทำได้ถึง Level ${finalLevel} (คะแนน: ${score})`);
                         // Proceed to next game instead of exit
-                        onComplete(finalLevel);
+                        onComplete(finalLevel, { score: score, time: timeSpent });
                     }
                     return newLives;
                 });
@@ -1000,7 +1065,7 @@
                     <div className="w-full p-4 flex justify-between items-start z-50 pointer-events-none relative">
                         <div className="flex flex-col gap-2">
                             <div className="bg-white/90 text-slate-800 px-4 py-1 rounded-full font-bold shadow-lg flex items-center gap-2">
-                                <span>⭐</span> {score} <span className="text-slate-400 text-sm">| Lv. {currentLevel}</span>
+                                <span>⭐</span> {score} <span className="text-slate-400 text-sm">| Best: Lv. {level}</span>
                             </div>
                             <div className="bg-white/90 text-blue-600 px-4 py-1 rounded-full font-bold shadow-lg flex items-center gap-2">
                                 <span>⚡</span> สายพาน {beltCount}
@@ -1018,7 +1083,7 @@
 
                     {/* ALERTS */}
                     {alertMsg && (
-                        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-slate-800 px-8 py-6 rounded-3xl shadow-2xl z-[60] text-center w-3/4 animate-pop-in border-4 border-yellow-400">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white text-slate-800 px-8 py-6 rounded-3xl shadow-2xl z-[60] text-center w-3/4 animate-pop-in border-4 border-yellow-400">
                             <h2 className="text-3xl font-black mb-1 text-yellow-500">{alertMsg.title}</h2>
                             <p className="text-slate-500 font-bold">{alertMsg.sub}</p>
                         </div>
@@ -1084,30 +1149,105 @@
         // ==========================================
         // GAME 4: LANGUAGE
         // ==========================================
-        function LanguageGame({ level, onComplete, onExit }) {
-            const WORDS = [
-                { q: "รถ", a: ["รถ", "รส"], correct: "รถ" },
-                { q: "ความสุข", a: ["สุข", "ศุกร์"], correct: "สุข" },
-                { q: "ดวงจันทร์", a: ["จันทร์", "จันทน์"], correct: "จันทร์" },
-                { q: "รสชาติ", a: ["รถ", "รส"], correct: "รส" },
-                { q: "วันศุกร์", a: ["สุข", "ศุกร์"], correct: "ศุกร์" }
-            ];
+        // ==========================================
+        // GAME 4: LANGUAGE (Updated)
+        // ==========================================
+        function LanguageGame({ level, onComplete, onExit, updateStats }) {
+            // Difficulty Levels
+            const LANGUAGE_LEVELS = {
+                EASY: [
+                    { id: 1, q: '🚗', type: 'image', correct: 'รถ', options: ['รถ', 'เรือ', 'รา', 'รด'] },
+                    { id: 2, q: '🏠', type: 'image', correct: 'บ้าน', options: ['บ้าน', 'บาน', 'บ้าง', 'บ่าง'] },
+                    { id: 3, q: '🐶', type: 'image', correct: 'หมา', options: ['หมา', 'หมู', 'หมี', 'แมว'] },
+                    { id: 4, q: '🧥', type: 'image', correct: 'เสื้อ', options: ['เสือ', 'เสื้อ', 'เชื้อ', 'สาด'] },
+                    { id: 5, q: '🧊', type: 'image', correct: 'น้ำแข็ง', options: ['น้ำแข็ง', 'น้ำแกง', 'น้ำขิง', 'น้ำขาว'] },
+                    { id: 101, q: '🍌', type: 'image', correct: 'กล้วย', options: ['กล้วย', 'กลวย', 'กวย', 'สวย'] },
+                    { id: 102, q: '🚲', type: 'image', correct: 'จักรยาน', options: ['จักรยาน', 'จักยาน', 'จักรยาล', 'จักการ'] },
+                    { id: 103, q: '👓', type: 'image', correct: 'แว่น', options: ['แว่น', 'แขน', 'แค้น', 'แหวน'] },
+                    { id: 104, q: '🐘', type: 'image', correct: 'ช้าง', options: ['ช้าง', 'ข้าง', 'ค้าง', 'กาง'] },
+                    { id: 105, q: '☔', type: 'image', correct: 'ร่ม', options: ['ร่ม', 'ลม', 'ล่ม', 'จม'] },
+                ],
+                MEDIUM: [
+                    { id: 6, q: '📅', text: 'วัน...', type: 'abstract', correct: 'ศุกร์', options: ['สุข', 'ศุกร์', 'สุก', 'ศุก'] },
+                    { id: 7, q: '😊', text: 'ความ...', type: 'abstract', correct: 'สุข', options: ['ศุกร์', 'สุข', 'สุก', 'ทรุก'] },
+                    { id: 8, q: '🥣', text: 'ใส่...', type: 'abstract', correct: 'บาตร', options: ['บาท', 'บาด', 'บัตร', 'บาตร'] },
+                    { id: 9, q: '💰', text: 'เงิน...', type: 'abstract', correct: 'บาท', options: ['บาท', 'บาตร', 'บาด', 'บาศ'] },
+                    { id: 10, q: '🪜', text: '...บันได', type: 'abstract', correct: 'ขั้น', options: ['คั่น', 'ขั้น', 'ครั้น', 'คัน'] },
+                    { id: 201, q: '🔪', text: 'มีด...', type: 'abstract', correct: 'บาด', options: ['บาท', 'บาด', 'บาศ', 'บาตร'] },
+                    { id: 202, q: '🌧️', text: 'โอกาส...', type: 'abstract', correct: 'อำนวย', options: ['อำนวย', 'อำนวน', 'อำรวย', 'กำนวย'] },
+                    { id: 203, q: '🌲', text: 'ลำ...', type: 'abstract', correct: 'ธาร', options: ['ทาน', 'ธาร', 'ธาล', 'มาร'] },
+                    { id: 204, q: '🍲', text: 'รับประ...', type: 'abstract', correct: 'ทาน', options: ['ทาน', 'ธาร', 'ทาร', 'การ'] },
+                    { id: 205, q: '🤒', text: 'โรค...', type: 'abstract', correct: 'ภัย', options: ['ภัย', 'ไพ', 'ไพร', 'ใภ'] },
+                ],
+                HARD: [
+                    { id: 11, q: '👂', text: '(ราชาศัพท์)', type: 'royal', correct: 'กรรณ', options: ['กรรณ', 'กัน', 'กัณฑ์', 'กรร'] },
+                    { id: 12, q: '🙂', text: '(ราชาศัพท์)', type: 'royal', correct: 'พักตร์', options: ['พัก', 'พัค', 'พักตร์', 'ภัค'] },
+                    { id: 13, q: '🌲', text: '(ป่า)', type: 'royal', correct: 'พนา', options: ['พนา', 'พา', 'พมา', 'ธนา'] },
+                    { id: 14, q: '🌊', text: '(น้ำ)', type: 'royal', correct: 'ชล', options: ['ชน', 'ชล', 'ซน', 'กล'] },
+                    { id: 15, q: '☀️', text: '(พระอาทิตย์)', type: 'royal', correct: 'สุริยา', options: ['สุริยา', 'สุนิสา', 'สุกิยา', 'สุทิน'] },
+                    { id: 301, q: '👃', text: '(ราชาศัพท์)', type: 'royal', correct: 'นาสิก', options: ['นาสิก', 'นาสิค', 'นาซิก', 'มาสิก'] },
+                    { id: 302, q: '🦶', text: '(ราชาศัพท์)', type: 'royal', correct: 'บาท', options: ['บาท', 'บาต', 'บาศ', 'บาน'] },
+                    { id: 303, q: '🌙', text: '(ดวงจันทร์)', type: 'royal', correct: 'ศศิธร', options: ['ศศิธร', 'ศศิทร', 'สสิธร', 'ศสินา'] },
+                    { id: 304, q: '🌺', text: '(ดอกไม้)', type: 'royal', correct: 'บุปผา', options: ['บุปผา', 'บุบผา', 'บุพพา', 'บุษบา'] },
+                    { id: 305, q: '⛰️', text: '(ภูเขา)', type: 'royal', correct: 'บรรพต', options: ['บรรพต', 'บรรพต', 'บันพต', 'บัญพต'] },
+                ]
+            };
+
+
+
+
+
+            // Combine all for easy access or keep separated
+            // Better: use a large pool defined outside or memoized
 
             const [currentQ, setCurrentQ] = useState(null);
             const [stage, setStage] = useState(1);
-            const TOTAL_STAGES = 15;
+            const [startTime, setStartTime] = useState(Date.now());
+            const [usedQuestions, setUsedQuestions] = useState([]); // Track used IDs
+            const TOTAL_STAGES = 10;
 
             useEffect(() => {
-                // Randomize question
-                setCurrentQ(WORDS[Math.floor(Math.random() * WORDS.length)]);
+                // Pre-load pools if needed, or just run generate
+                generateQuestion();
             }, [level, stage]);
+
+            const generateQuestion = () => {
+                let pool = [];
+                if (level <= 5) pool = LANGUAGE_LEVELS.EASY || [];
+                else if (level <= 10) pool = LANGUAGE_LEVELS.MEDIUM || [];
+                else pool = LANGUAGE_LEVELS.HARD || [];
+
+                // Filter out used
+                const available = pool.filter(p => !usedQuestions.includes(p.id));
+
+                // If run out, reset used for this session (or just pick random)
+                let q;
+                if (available.length > 0) {
+                    q = available[Math.floor(Math.random() * available.length)];
+                } else {
+                    // Reset or pick any
+                    q = pool[Math.floor(Math.random() * pool.length)];
+                }
+
+                if (!q) return; // Safeguard
+
+                setUsedQuestions(prev => [...prev, q.id]);
+
+                // Shuffle options for display
+                const shuffledOpts = [...q.options].sort(() => 0.5 - Math.random());
+                setCurrentQ({ ...q, displayOptions: shuffledOpts });
+            };
 
             const handleAnswer = (ans) => {
                 if (ans === currentQ.correct) {
                     if (stage < TOTAL_STAGES) {
                         setStage(s => s + 1);
                     } else {
-                        onComplete();
+                        // Calc Score
+                        const roundScore = 100 * level;
+                        const timeSpent = (Date.now() - startTime) / 1000;
+                        updateStats(roundScore, timeSpent);
+                        onComplete(null, { score: roundScore, time: timeSpent });
                     }
                 } else {
                     alert('ยังไม่ถูกครับ');
@@ -1119,14 +1259,18 @@
                     <div className="absolute top-4 right-4 bg-purple-200 text-purple-800 px-3 py-1 rounded-full font-bold">Level {level}</div>
                     <div className="absolute top-4 left-4 text-slate-500 font-bold">Stage {stage}/{TOTAL_STAGES}</div>
 
-                    <div className="bg-white p-8 rounded-3xl shadow-lg text-center w-full mb-8">
-                        <span className="text-sm text-slate-400 font-bold uppercase">คำศัพท์</span>
-                        <h2 className="text-4xl font-bold text-slate-800 mt-2">{currentQ?.q}</h2>
+                    <div className="bg-white p-6 rounded-3xl shadow-lg text-center w-full mb-6 border-b-4 border-purple-200">
+                        <span className="text-sm text-slate-400 font-bold uppercase">เลือกคำที่ถูกต้อง</span>
+
+                        <div className="mt-4 mb-2 flex flex-col items-center">
+                            <span className="text-8xl filter drop-shadow-md">{currentQ?.q}</span>
+                            {currentQ?.text && <span className="text-xl text-slate-500 font-bold mt-2">{currentQ?.text}</span>}
+                        </div>
                     </div>
 
-                    <div className="grid grid-cols-1 w-full gap-4">
-                        {currentQ?.a.map((ans, i) => (
-                            <button key={i} onClick={() => handleAnswer(ans)} className="bg-white border-2 border-purple-100 py-4 rounded-xl text-xl font-bold text-purple-700 hover:bg-purple-100 transition active:scale-95">
+                    <div className="grid grid-cols-2 gap-4 w-full">
+                        {currentQ?.displayOptions.map((ans, i) => (
+                            <button key={i} onClick={() => handleAnswer(ans)} className="bg-white border-2 border-purple-100 py-6 rounded-2xl text-2xl font-bold text-purple-700 hover:bg-purple-500 hover:text-white hover:border-purple-500 transition active:scale-95 shadow-sm">
                                 {ans}
                             </button>
                         ))}
@@ -1138,7 +1282,7 @@
         // ==========================================
         // GAME 5: EXECUTIVE (Updated Logic)
         // ==========================================
-        function ExecutiveGame({ level, onComplete, onExit }) {
+        function ExecutiveGame({ level, onComplete, onExit, updateStats }) {
             const ALL_ANIMALS = ['🦁', '🐘', '🦒', '🐒', '🦓', '🐯', '🦛', '🐼', '🦊', '🐨', '🐮', '🐷', '🐸', '🐔', '🐧'];
 
             const [grid, setGrid] = useState([]);
@@ -1149,6 +1293,7 @@
             const [availableAnimals, setAvailableAnimals] = useState([]);
             const [selectedAnimal, setSelectedAnimal] = useState(null);
             const [stage, setStage] = useState(1);
+            const [startTime] = useState(Date.now());
             const TOTAL_STAGES = 15;
 
             // Level Scaling (Cap difficulty logic at level 15)
@@ -1286,7 +1431,11 @@
                     if (stage < TOTAL_STAGES) {
                         setStage(s => s + 1);
                     } else {
-                        onComplete();
+                        // Calc Score
+                        const roundScore = 120 * effectiveLevel;
+                        const timeSpent = (Date.now() - startTime) / 1000;
+                        updateStats(roundScore, timeSpent);
+                        onComplete(null, { score: roundScore, time: timeSpent });
                     }
                 } else {
                     alert("ยังไม่ถูก ลองอ่านคำใบ้ใหม่อีกครั้งนะ");
@@ -1350,7 +1499,7 @@
         // ==========================================
         // WELCOME SCREEN
         // ==========================================
-        const WelcomeScreen = ({ onStart }) => (
+        const WelcomeScreen = ({ onStart, onShowLeaderboard }) => (
             <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-50 relative overflow-hidden font-kanit p-6">
                 {/* Decorative Background */}
                 <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-emerald-200 rounded-full blur-3xl opacity-50 animate-pulse-custom"></div>
@@ -1378,29 +1527,183 @@
                 </div>
 
                 <div className="absolute bottom-6 text-slate-400 text-xs font-bold opacity-60">
-                    v1.5.0 • Zoo Edition
+                    v1.7.0 • Zoo Edition + Refined Flow
+                </div>
+
+                {/* Leaderboard Button (Moved here) */}
+                <button
+                    onClick={() => onShowLeaderboard()}
+                    className="absolute top-6 right-6 p-3 rounded-full bg-white/50 hover:bg-white text-emerald-800 transition shadow-lg backdrop-blur-sm animate-fade-in"
+                >
+                    <Icon path={Icons.Trophy} size={24} />
+                </button>
+            </div>
+        );
+
+        // ==========================================
+        // GAME SUMMARY SCREEN (New)
+        // ==========================================
+        const GameSummaryScreen = ({ gameName, score, level, time, onNext, onHome }) => (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-50 relative overflow-hidden font-kanit p-6">
+                {/* Decorative Background */}
+                <div className="absolute top-0 left-0 w-full h-full bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9IiMxMGI5ODEiIGZpbGwtb3BhY2l0eT0iMC4xIi8+PC9zdmc+')] opacity-50"></div>
+
+                <div className="z-10 w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl text-center border-4 border-emerald-100 animate-pop-in">
+                    <div className="text-6xl mb-4 animate-bounce">🎉</div>
+                    <h1 className="text-3xl font-black text-slate-800 mb-2">ภารกิจสำเร็จ!</h1>
+                    <p className="text-slate-500 font-bold mb-8">เกม {gameName}</p>
+
+                    <div className="grid grid-cols-2 gap-4 mb-8">
+                        <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100">
+                            <div className="text-sm text-yellow-600 font-bold uppercase">คะแนน</div>
+                            <div className="text-4xl font-black text-yellow-500">{score}</div>
+                        </div>
+                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                            <div className="text-sm text-blue-600 font-bold uppercase">ระดับ</div>
+                            <div className="text-4xl font-black text-blue-500">{level}</div>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 mb-6 flex items-center justify-center gap-2 text-slate-500 font-bold">
+                        <Icon path={Icons.Clock} size={20} />
+                        <span>เวลาที่ใช้: {Math.floor(time || 0)} วินาที</span>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                        <button onClick={onNext} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg active:scale-95 transition flex items-center justify-center gap-2">
+                            ด่านถัดไป <Icon path={Icons.ChevronRight} />
+                        </button>
+                        <button onClick={onHome} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 py-3 rounded-xl font-bold active:scale-95 transition">
+                            กลับหน้าหลัก
+                        </button>
+                    </div>
                 </div>
             </div>
         );
 
         // ==========================================
+        // LEADERBOARD SCREEN
+        // ==========================================
+        function LeaderboardScreen({ onClose, history = [], games }) {
+            const [activeTab, setActiveTab] = useState('all');
+
+            // Filter history
+            const filteredHistory = history.filter(h => {
+                if (activeTab === 'all') return true;
+                return h.gameId === activeTab;
+            }).sort((a, b) => b.timestamp - a.timestamp); // Newest first
+
+            const formatDate = (ts) => {
+                return new Date(ts).toLocaleString('th-TH', {
+                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                });
+            };
+
+            return (
+                <div className="w-full h-full flex flex-col bg-emerald-50 font-kanit">
+                    {/* Header */}
+                    <div className="bg-white p-4 shadow-sm z-10 flex items-center justify-between rounded-b-3xl">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-yellow-100 p-2 rounded-xl text-yellow-600">
+                                <Icon path={Icons.Trophy} size={24} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black text-slate-800">กระดานคะแนน</h2>
+                                <p className="text-xs text-slate-400">ประวัติการเล่นของคุณ</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200 transition">
+                            <Icon path={Icons.X} size={20} />
+                        </button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex gap-2 p-4 overflow-x-auto no-scrollbar">
+                        <button
+                            onClick={() => setActiveTab('all')}
+                            className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeTab === 'all' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-500'}`}
+                        >
+                            ทั้งหมด
+                        </button>
+                        {Object.values(games).map(g => (
+                            <button
+                                key={g.id}
+                                onClick={() => setActiveTab(g.id)}
+                                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1 ${activeTab === g.id ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-500'}`}
+                            >
+                                <span>{g.icon}</span> {g.name}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* List */}
+                    <div className="flex-1 overflow-y-auto px-4 pb-20 space-y-3">
+                        {filteredHistory.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-64 text-slate-400 opacity-60">
+                                <Icon path={Icons.Trophy} size={48} className="mb-2" />
+                                <p>ยังไม่มีประวัติการเล่น</p>
+                            </div>
+                        ) : (
+                            filteredHistory.map((record, i) => {
+                                const game = games[record.gameId];
+                                return (
+                                    <div key={i} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 animate-slide-up" style={{ animationDelay: `${i * 0.05}s` }}>
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 ${game?.color.replace('text-', 'bg-').split(' ')[0] || 'bg-slate-100'}`}>
+                                            {game?.icon}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start">
+                                                <h3 className="font-bold text-slate-700 truncate">{game?.name}</h3>
+                                                <span className="text-emerald-600 font-extrabold text-lg">+{record.score}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-1">
+                                                <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+                                                    <Icon path={Icons.Clock} size={12} />
+                                                    <span>{formatDate(record.timestamp)}</span>
+                                                </div>
+                                                <div className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg">
+                                                    {Math.floor(record.duration)} วินาที
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ==========================================
         // MAIN APP COMPONENT
         // ==========================================
+        // ==========================================
+        // MAIN APP COMPONENT (Updated)
+        // ==========================================
         function App() {
-            // STATE
-            const [progress, setProgress] = useState(() => {
-                const saved = localStorage.getItem('zoo_progress');
-                return saved ? JSON.parse(saved) : { memory: 1, visuospatial: 1, attention: 1, language: 1, executive: 1 };
+            // STATE with V2 Storage
+            const [gameState, setGameState] = useState(() => {
+                const saved = localStorage.getItem('zoo_brain_v2');
+                const parsed = saved ? JSON.parse(saved) : {};
+
+                return {
+                    progress: parsed.progress || { memory: 1, visuospatial: 1, attention: 1, language: 1, executive: 1 },
+                    highScores: parsed.highScores || { memory: 0, visuospatial: 0, attention: 0, language: 0, executive: 0 },
+                    playTime: parsed.playTime || { memory: 0, visuospatial: 0, attention: 0, language: 0, executive: 0 },
+                    history: parsed.history || [] // New: History tracking
+                };
             });
 
             const [selectedGames, setSelectedGames] = useState([]);
             const [activeGameIndex, setActiveGameIndex] = useState(null);
-            const [screen, setScreen] = useState('welcome'); // welcome, selection, playing
+            const [screen, setScreen] = useState('welcome');
             const [showExitConfirm, setShowExitConfirm] = useState(false);
+            const [lastGameResult, setLastGameResult] = useState(null); // { score, level, gameName }
 
             useEffect(() => {
-                localStorage.setItem('zoo_progress', JSON.stringify(progress));
-            }, [progress]);
+                localStorage.setItem('zoo_brain_v2', JSON.stringify(gameState));
+            }, [gameState]);
 
             // Handlers
             const toggleSelection = (gameId) => {
@@ -1415,9 +1718,13 @@
 
             const resetProgress = (gameId, e) => {
                 e.stopPropagation();
-                // Custom confirm modal would be better, but native is okay here for admin-like task
-                if (confirm(`รีเซ็ตระดับของ ${GAMES[gameId].name} เป็น 1?`)) {
-                    setProgress(prev => ({ ...prev, [gameId]: 1 }));
+                if (confirm(`รีเซ็ตข้อมูลของ ${GAMES[gameId].name} ทั้งหมด?`)) {
+                    setGameState(prev => ({
+                        ...prev,
+                        progress: { ...prev.progress, [gameId]: 1 },
+                        highScores: { ...prev.highScores, [gameId]: 0 },
+                        playTime: { ...prev.playTime, [gameId]: 0 }
+                    }));
                 }
             };
 
@@ -1428,34 +1735,76 @@
                 }
             };
 
-            const handleLevelComplete = (achievedLevel) => {
+            const handleUpdateStats = (gameId, score, timeInSeconds) => {
+                setGameState(prev => {
+                    const newHigh = Math.max(prev.highScores[gameId], score);
+                    const newTime = prev.playTime[gameId] + timeInSeconds;
+
+                    // Add new record to history
+                    const newRecord = {
+                        gameId,
+                        score,
+                        duration: timeInSeconds,
+                        timestamp: Date.now()
+                    };
+
+                    const newHistory = [newRecord, ...(prev.history || [])].slice(0, 100); // Keep last 100 records
+
+                    return {
+                        ...prev,
+                        highScores: { ...prev.highScores, [gameId]: newHigh },
+                        playTime: { ...prev.playTime, [gameId]: newTime },
+                        history: newHistory
+                    };
+                });
+            };
+
+            const handleLevelComplete = (achievedLevel, finalScoreObj) => {
                 const currentGameId = selectedGames[activeGameIndex];
 
-                // Update Progress (Save if higher)
-                if (achievedLevel) {
-                    setProgress(prev => ({
-                        ...prev,
-                        [currentGameId]: Math.max(prev[currentGameId], achievedLevel)
-                    }));
+                let sessionScore = 0;
+                let sessionTime = 0;
+
+                if (typeof finalScoreObj === 'object' && finalScoreObj !== null) {
+                    sessionScore = finalScoreObj.score;
+                    sessionTime = finalScoreObj.time;
                 } else {
-                    // Default increment (for non-endless games or simple completion)
-                    setProgress(prev => ({ ...prev, [currentGameId]: prev[currentGameId] + 1 }));
+                    sessionScore = finalScoreObj || 0;
                 }
 
-                // Move to next game in session
-                if (activeGameIndex < 2) {
-                    // Small delay or modal could be here
-                    setTimeout(() => {
-                        alert(`ไปต่อเกมที่ ${activeGameIndex + 2}`);
-                        setActiveGameIndex(prev => prev + 1);
-                    }, 500);
+                // Update Progress Level
+                setGameState(prev => {
+                    let nextLv = prev.progress[currentGameId];
+                    if (achievedLevel) nextLv = Math.max(nextLv, achievedLevel);
+                    else nextLv = nextLv + 1;
+
+                    return {
+                        ...prev,
+                        progress: { ...prev.progress, [currentGameId]: nextLv }
+                    };
+                });
+
+                // Set Result for Summary
+                setLastGameResult({
+                    score: sessionScore,
+                    level: achievedLevel || gameState.progress[currentGameId],
+                    time: sessionTime,
+                    gameName: GAMES[currentGameId].name
+                });
+
+                setScreen('summary');
+            };
+
+            const handleNextGame = () => {
+                if (activeGameIndex !== null && activeGameIndex < selectedGames.length - 1) {
+                    setActiveGameIndex(prev => prev + 1);
+                    setScreen('playing');
                 } else {
-                    setTimeout(() => {
-                        alert("🎉 จบการฝึกฝนรอบนี้แล้ว! พักผ่อนได้");
-                        setScreen('selection');
-                        setActiveGameIndex(null);
-                        setSelectedGames([]);
-                    }, 500);
+                    // All Done
+                    alert("🎉 จบภารกิจครบ 3 เกมแล้ว!");
+                    setScreen('selection');
+                    setActiveGameIndex(null);
+                    setSelectedGames([]);
                 }
             };
 
@@ -1475,7 +1824,30 @@
 
             // RENDER SCREEN
             if (screen === 'welcome') {
-                return <WelcomeScreen onStart={handleWelcomeStart} />;
+                return <WelcomeScreen onStart={handleWelcomeStart} onShowLeaderboard={() => setScreen('leaderboard')} />;
+            }
+
+            if (screen === 'leaderboard') {
+                return (
+                    <LeaderboardScreen
+                        onClose={() => setScreen('welcome')}
+                        history={gameState.history}
+                        games={GAMES}
+                    />
+                );
+            }
+
+            if (screen === 'summary' && lastGameResult) {
+                return (
+                    <GameSummaryScreen
+                        gameName={lastGameResult.gameName}
+                        score={lastGameResult.score}
+                        level={lastGameResult.level}
+                        time={lastGameResult.time}
+                        onNext={handleNextGame}
+                        onHome={confirmExitSession}
+                    />
+                );
             }
 
             if (screen === 'playing') {
@@ -1491,7 +1863,8 @@
                     return <div className="w-full h-full flex items-center justify-center">Error: Game Data Not Found</div>;
                 }
 
-                const currentLevel = progress[currentGameId];
+                const currentLevel = gameState.progress[currentGameId];
+                const updateStatsWrapper = (score, time) => handleUpdateStats(currentGameId, score, time);
 
                 return (
                     <div className="w-full h-full flex flex-col font-kanit relative">
@@ -1507,11 +1880,11 @@
 
                         {/* Game Component */}
                         <div className="flex-1 relative overflow-hidden z-0">
-                            {currentGameId === 'memory' && <MemoryGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} />}
-                            {currentGameId === 'visuospatial' && <VisuospatialGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} />}
-                            {currentGameId === 'attention' && <AttentionGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} />}
-                            {currentGameId === 'language' && <LanguageGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} />}
-                            {currentGameId === 'executive' && <ExecutiveGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} />}
+                            {currentGameId === 'memory' && <MemoryGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} updateStats={updateStatsWrapper} />}
+                            {currentGameId === 'visuospatial' && <VisuospatialGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} updateStats={updateStatsWrapper} />}
+                            {currentGameId === 'attention' && <AttentionGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} updateStats={updateStatsWrapper} />}
+                            {currentGameId === 'language' && <LanguageGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} updateStats={updateStatsWrapper} />}
+                            {currentGameId === 'executive' && <ExecutiveGame level={currentLevel} onComplete={handleLevelComplete} onExit={exitSession} updateStats={updateStatsWrapper} />}
                         </div>
 
                         {/* Custom Exit Modal */}
@@ -1555,7 +1928,9 @@
                     <main className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
                         {Object.values(GAMES).map(game => {
                             const isSelected = selectedGames.includes(game.id);
-                            const currentLv = progress[game.id];
+                            const currentLv = gameState.progress[game.id];
+                            const highScore = gameState.highScores[game.id];
+                            const timeMins = Math.floor(gameState.playTime[game.id] / 60);
 
                             return (
                                 <div key={game.id}
@@ -1580,6 +1955,10 @@
                                     <div className="flex-1">
                                         <h3 className="font-bold text-slate-800 text-lg">{game.name}</h3>
                                         <p className="text-slate-400 text-xs">{game.desc}</p>
+                                        <div className="flex gap-2 mt-1">
+                                            <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">🏆 {highScore}</span>
+                                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">⏳ {timeMins}m</span>
+                                        </div>
                                     </div>
 
                                     {/* Level & Reset */}
